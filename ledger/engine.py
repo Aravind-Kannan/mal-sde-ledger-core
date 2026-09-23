@@ -22,6 +22,11 @@ ACCOUNTS: dict[str, str] = {
     "ACC-002": "BHD",
 }
 
+# Spec: AED 25.00 once per day per account when pre-fee close is negative.
+OVERDRAFT_FEE_MINOR: dict[str, int] = {
+    "AED": 2500,
+}
+
 
 @dataclass
 class AccountState:
@@ -56,6 +61,9 @@ class Ledger:
     # (account_id, value_date, signed_minor, source_event_id, kind)
     postings: list[tuple[str, int, int, str, str]] = field(default_factory=list)
     auths: dict[str, AuthRecord] = field(default_factory=dict)
+    # Derived: recomputed after every apply; never source-log mutations.
+    # (account_id, value_date, signed_minor) — signed_minor is negative (fee debit).
+    fee_postings: list[tuple[str, int, int]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not self.accounts:
@@ -64,14 +72,19 @@ class Ledger:
 
     def apply(self, event: SourceEvent) -> AppliedEvent:
         if event.event_type in (EventType.CREDIT, EventType.DEBIT):
-            return self._apply_posting(event)
-        if event.event_type == EventType.AUTHORIZATION:
-            return self._apply_authorization(event)
-        if event.event_type == EventType.SETTLEMENT:
-            return self._apply_settlement(event)
-        if event.event_type == EventType.REVERSAL:
-            return self._apply_reversal(event)
-        raise NotImplementedError(f"event type not yet supported: {event.event_type}")
+            applied = self._apply_posting(event)
+        elif event.event_type == EventType.AUTHORIZATION:
+            applied = self._apply_authorization(event)
+        elif event.event_type == EventType.SETTLEMENT:
+            applied = self._apply_settlement(event)
+        elif event.event_type == EventType.REVERSAL:
+            applied = self._apply_reversal(event)
+        else:
+            raise NotImplementedError(
+                f"event type not yet supported: {event.event_type}"
+            )
+        self._restate_fees()
+        return applied
 
     def _apply_posting(self, event: SourceEvent) -> AppliedEvent:
         if event.amount is None:
@@ -317,13 +330,29 @@ class Ledger:
                 total += rec.hold_minor
         return total
 
-    def available_balance(self, account_id: str, as_of_day: int) -> Money:
-        ccy = self.accounts[account_id].currency
-        ledger = self.ledger_balance(account_id, as_of_day)
-        return Money(ccy, ledger.minor - self.active_holds_minor(account_id))
+    def _fee_horizon(self) -> int:
+        """Assess fees only through the latest booking day seen in the log."""
+        if not self.log:
+            return 0
+        return max(a.source.booking_day for a in self.log)
 
-    def ledger_balance(self, account_id: str, as_of_day: int) -> Money:
-        """Sum of postings with value_date <= as_of_day."""
+    def _restate_fees(self) -> None:
+        """Recompute derived overdraft fees from the current source-posting prefix."""
+        self.fee_postings.clear()
+        horizon = self._fee_horizon()
+        if horizon <= 0:
+            return
+        for day in range(1, horizon + 1):
+            for aid, acct in self.accounts.items():
+                fee_amt = OVERDRAFT_FEE_MINOR.get(acct.currency)
+                if fee_amt is None:
+                    continue
+                pre = self.pre_fee_closing(aid, day).minor
+                if pre < 0:
+                    self.fee_postings.append((aid, day, -fee_amt))
+
+    def source_balance(self, account_id: str, as_of_day: int) -> Money:
+        """Sum of source postings only (no derived fees)."""
         ccy = self.accounts[account_id].currency
         total = 0
         for aid, vdate, minor, _eid, _kind in self.postings:
@@ -331,11 +360,45 @@ class Ledger:
                 total += minor
         return Money(ccy, total)
 
+    def pre_fee_closing(self, account_id: str, as_of_day: int) -> Money:
+        """Closing before that day's own fee: source + prior-day fees."""
+        ccy = self.accounts[account_id].currency
+        total = self.source_balance(account_id, as_of_day).minor
+        for aid, vdate, minor in self.fee_postings:
+            if aid == account_id and vdate < as_of_day:
+                total += minor
+        return Money(ccy, total)
+
+    def available_balance(self, account_id: str, as_of_day: int) -> Money:
+        ccy = self.accounts[account_id].currency
+        ledger = self.ledger_balance(account_id, as_of_day)
+        return Money(ccy, ledger.minor - self.active_holds_minor(account_id))
+
+    def ledger_balance(self, account_id: str, as_of_day: int) -> Money:
+        """Post-fee closing: source + all fees with value_date <= as_of_day."""
+        ccy = self.accounts[account_id].currency
+        total = self.source_balance(account_id, as_of_day).minor
+        for aid, vdate, minor in self.fee_postings:
+            if aid == account_id and vdate <= as_of_day:
+                total += minor
+        return Money(ccy, total)
+
+    def fees_on_day(self, account_id: str, day: int) -> list[Money]:
+        ccy = self.accounts[account_id].currency
+        return [
+            Money(ccy, -minor)  # report as positive fee amount assessed
+            for aid, vdate, minor in self.fee_postings
+            if aid == account_id and vdate == day
+        ]
+
     def report_days(self, through_day: int = 6) -> list[DayReport]:
         reports: list[DayReport] = []
         for day in range(1, through_day + 1):
             closings = {
                 aid: self.ledger_balance(aid, day) for aid in self.accounts
+            }
+            fees = {
+                aid: self.fees_on_day(aid, day) for aid in self.accounts
             }
             auth_lines: list[str] = []
             for auth_id, rec in self.auths.items():
@@ -345,7 +408,7 @@ class Ledger:
                 DayReport(
                     day=day,
                     closings=closings,
-                    fees={aid: [] for aid in self.accounts},
+                    fees=fees,
                     auths=auth_lines,
                     errors=[],
                 )

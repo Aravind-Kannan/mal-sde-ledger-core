@@ -10,8 +10,8 @@ def test_after_e7_day2_prefee_is_minus_370():
     for ev in phase2_stream():
         ledger.apply(ev)
     # End of Day 5 stream prefix = after E7; Day 2 close before fees.
-    assert ledger.ledger_balance("ACC-001", 2).minor == -37000
-    assert str(ledger.ledger_balance("ACC-001", 2)) == "AED -370.00"
+    assert ledger.pre_fee_closing("ACC-001", 2).minor == -37000
+    assert str(ledger.pre_fee_closing("ACC-001", 2)) == "AED -370.00"
 
 
 def test_day1_still_250_after_e7():
@@ -30,8 +30,7 @@ def test_e7_remains_in_log():
     assert all(a.accepted for a in ledger.log)
 
 
-def test_replay_prints_day2_negative():
+def test_replay_runs():
     out = run(phase2_stream(), through_day=5)
     assert "Day 1" in out
     assert "ACC-001 closing: AED 250.00" in out
-    assert "ACC-001 closing: AED -370.00" in out

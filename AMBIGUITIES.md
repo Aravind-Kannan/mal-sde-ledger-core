@@ -23,3 +23,7 @@ E9 reverses E7. Resolution: append a compensating opposite posting with the same
 ## Phase 6 — sticky vs restated authorization
 
 After E7, Auth-B is declined (available negative). E9 restores the ledger. Resolution: auth decisions are sticky at apply time; E9 does not rewrite E8. Documented by the intentionally failing tests/test_known_gap.py.
+
+## Phase 7 — overdraft fees derived, not sourced
+
+Fees are recomputed after every apply from source postings. Pre-fee close for day D = source postings with value_date ≤ D plus fees with value_date < D. Fee horizon = max booking_day in the log (so Day 6 is not assessed until a Day-6 booking exists). Abandoned: sticky fee rows; calendar-only fees without restatement (see REJECTED.md).

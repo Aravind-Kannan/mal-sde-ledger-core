@@ -31,3 +31,7 @@ Phase 5: REVERSAL. E9 compensates E7 at value_date Day 2. Snapshot after E9 matc
 ## 2026-09-23 09:40 +0530
 
 Phase 6: Auth-B sticky reject. Intentional failing test_known_gap.py documents restatement vs sticky.
+
+## 2026-09-23 09:42 +0530
+
+Phase 7: derived OD fees. After E7/E8 fees on days 2,4,5; after E9 cleared. REJECTED.md + NUMBERS.md started.
