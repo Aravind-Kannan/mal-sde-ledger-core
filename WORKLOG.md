@@ -27,3 +27,7 @@ Phase 4: SETTLEMENT. Auth-A settles for 185 â†’ ledger 465.00. Auth-Z unknown â†
 ## 2026-09-23 09:39 +0530
 
 Phase 5: REVERSAL. E9 compensates E7 at value_date Day 2. Snapshot after E9 matches pre-E7 (465.00).
+
+## 2026-09-23 09:40 +0530
+
+Phase 6: Auth-B sticky reject. Intentional failing test_known_gap.py documents restatement vs sticky.

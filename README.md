@@ -27,3 +27,7 @@ Each day block shows:
 Phase 1 stream is E1–E2 only. Day 1 ACC-001 closing is AED 250.00.
 
 Phase 2 adds E7 (debit booked Day 5, value_date Day 2). Day 2 closing becomes AED −370.00. See AMBIGUITIES.md.
+
+## Known failing test
+
+`tests/test_known_gap.py` is expected to fail. It asks whether Auth-B would be approved if decisions were restated after E9; our design keeps sticky denials. Run `PYTHONPATH=".deps:." python -m pytest -q` — suite otherwise green; that one fail is intentional. Use `-rs` to see the skip/fail notes.

@@ -19,3 +19,7 @@ Auth-A hold is AED 200.00, settlement E5 captures AED 185.00. Resolution: debit 
 ## Phase 5 — reversal
 
 E9 reverses E7. Resolution: append a compensating opposite posting with the same value_date as the reversal event (Day 2). E7 stays in the log; never mutated or deleted.
+
+## Phase 6 — sticky vs restated authorization
+
+After E7, Auth-B is declined (available negative). E9 restores the ledger. Resolution: auth decisions are sticky at apply time; E9 does not rewrite E8. Documented by the intentionally failing tests/test_known_gap.py.
