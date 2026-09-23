@@ -15,3 +15,7 @@ Authorization checks available = ledger(as_of) − active holds. Resolution: as_
 ## Phase 4 — settle for less than hold
 
 Auth-A hold is AED 200.00, settlement E5 captures AED 185.00. Resolution: debit the capture amount, mark auth SETTLED, release the full hold (remainder 15.00 does not stay held and is not separately posted).
+
+## Phase 5 — reversal
+
+E9 reverses E7. Resolution: append a compensating opposite posting with the same value_date as the reversal event (Day 2). E7 stays in the log; never mutated or deleted.

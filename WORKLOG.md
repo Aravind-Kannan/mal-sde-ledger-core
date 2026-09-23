@@ -23,3 +23,7 @@ Phase 3: AUTHORIZATION. Auth-A approved; ledger 250.00, available 50.00. Hold do
 ## 2026-09-23 09:38 +0530
 
 Phase 4: SETTLEMENT. Auth-A settles for 185 → ledger 465.00. Auth-Z unknown → rejected, no debit.
+
+## 2026-09-23 09:39 +0530
+
+Phase 5: REVERSAL. E9 compensates E7 at value_date Day 2. Snapshot after E9 matches pre-E7 (465.00).

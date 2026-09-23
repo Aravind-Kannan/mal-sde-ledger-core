@@ -69,6 +69,8 @@ class Ledger:
             return self._apply_authorization(event)
         if event.event_type == EventType.SETTLEMENT:
             return self._apply_settlement(event)
+        if event.event_type == EventType.REVERSAL:
+            return self._apply_reversal(event)
         raise NotImplementedError(f"event type not yet supported: {event.event_type}")
 
     def _apply_posting(self, event: SourceEvent) -> AppliedEvent:
@@ -251,6 +253,59 @@ class Ledger:
             accepted=True,
             auth_status=AuthStatus.SETTLED,
             posting_minors=(signed,),
+        )
+        self.log.append(applied)
+        return applied
+
+    def _apply_reversal(self, event: SourceEvent) -> AppliedEvent:
+        target_id = event.reverses_event_id
+        if not target_id:
+            applied = AppliedEvent(
+                source=event, accepted=False, error="reversal missing target"
+            )
+            self.log.append(applied)
+            return applied
+        # Find accepted posting lines from the target event.
+        target_lines = [
+            p for p in self.postings if p[3] == target_id
+        ]
+        if not target_lines:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"reversal target {target_id} not found or not posted",
+            )
+            self.log.append(applied)
+            return applied
+        # Already reversed?
+        already = any(
+            a.source.event_type == EventType.REVERSAL
+            and a.source.reverses_event_id == target_id
+            and a.accepted
+            for a in self.log
+        )
+        if already:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"target {target_id} already reversed",
+            )
+            self.log.append(applied)
+            return applied
+
+        signed_minors: list[int] = []
+        for aid, _vdate, minor, _eid, _kind in target_lines:
+            # Compensating opposite; value_date from the reversal event
+            # (E9 uses value_date Day 2, same as E7).
+            opp = -minor
+            self.postings.append(
+                (aid, event.value_date, opp, event.event_id, EventType.REVERSAL.value)
+            )
+            signed_minors.append(opp)
+        applied = AppliedEvent(
+            source=event,
+            accepted=True,
+            posting_minors=tuple(signed_minors),
         )
         self.log.append(applied)
         return applied
