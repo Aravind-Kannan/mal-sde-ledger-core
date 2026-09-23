@@ -1,0 +1,13 @@
+# WORKLOG
+
+## 2026-09-23 09:32 +0530
+
+Phase 1 start. Empty repo on master, no commits yet. Chose Python 3 + ISO 4217 integer minor units (AED exp 2, BHD exp 3). Building CREDIT/DEBIT MVP with E1–E2 only.
+
+## 2026-09-23 09:33 +0530
+
+Scaffolded ledger/money.py, events.py, engine.py, stream.py, replay.py, tests/test_phase1_postings.py, README. Next: run pytest, then first commit if author email gate passes.
+
+## 2026-09-23 09:35 +0530
+
+Phase 1 green: 4 passed. Replay prints ACC-001 Day 1 closing AED 250.00. Global pyenv default was 2.7; pinned `.python-version` to 3.13.1 and installed pytest into `.deps` (gitignored). Author email gate: aravindkannan2001@gmail.com. Committing Phase 1.
