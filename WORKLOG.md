@@ -19,3 +19,7 @@ Phase 2: value_date as-of closes. Stream E1,E2,E7. Day 2 pre-fee close AED −37
 ## 2026-09-23 09:37 +0530
 
 Phase 3: AUTHORIZATION. Auth-A approved; ledger 250.00, available 50.00. Hold does not touch ledger balance.
+
+## 2026-09-23 09:38 +0530
+
+Phase 4: SETTLEMENT. Auth-A settles for 185 → ledger 465.00. Auth-Z unknown → rejected, no debit.

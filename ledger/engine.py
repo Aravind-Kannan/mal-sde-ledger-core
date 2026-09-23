@@ -67,6 +67,8 @@ class Ledger:
             return self._apply_posting(event)
         if event.event_type == EventType.AUTHORIZATION:
             return self._apply_authorization(event)
+        if event.event_type == EventType.SETTLEMENT:
+            return self._apply_settlement(event)
         raise NotImplementedError(f"event type not yet supported: {event.event_type}")
 
     def _apply_posting(self, event: SourceEvent) -> AppliedEvent:
@@ -181,6 +183,74 @@ class Ledger:
             source=event,
             accepted=True,
             auth_status=AuthStatus.APPROVED,
+        )
+        self.log.append(applied)
+        return applied
+
+    def _apply_settlement(self, event: SourceEvent) -> AppliedEvent:
+        if event.auth_id is None or event.amount is None:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error="settlement missing auth_id or amount",
+            )
+            self.log.append(applied)
+            return applied
+        rec = self.auths.get(event.auth_id)
+        if rec is None or rec.status != AuthStatus.APPROVED:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=(
+                    f"settlement references unknown or inactive auth_id "
+                    f"{event.auth_id}"
+                ),
+            )
+            self.log.append(applied)
+            return applied
+        if rec.account_id != event.account_id:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"auth {event.auth_id} belongs to another account",
+            )
+            self.log.append(applied)
+            return applied
+        acct = self.accounts[event.account_id]
+        if event.amount.currency != acct.currency:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"currency mismatch: account {acct.currency}",
+            )
+            self.log.append(applied)
+            return applied
+
+        # Capture for settlement amount; release full hold (settle-for-less).
+        signed = -event.amount.minor
+        self.postings.append(
+            (
+                event.account_id,
+                event.value_date,
+                signed,
+                event.event_id,
+                EventType.SETTLEMENT.value,
+            )
+        )
+        # Mutating AuthRecord status would violate frozen-source spirit for the
+        # auth *event*, but AuthRecord is derived state. Replace the record.
+        self.auths[event.auth_id] = AuthRecord(
+            auth_id=rec.auth_id,
+            account_id=rec.account_id,
+            hold_minor=rec.hold_minor,
+            status=AuthStatus.SETTLED,
+            booking_day=rec.booking_day,
+        )
+        applied = AppliedEvent(
+            source=event,
+            accepted=True,
+            auth_status=AuthStatus.SETTLED,
+            posting_minors=(signed,),
         )
         self.log.append(applied)
         return applied

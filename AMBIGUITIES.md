@@ -11,3 +11,7 @@ Criterion says Day 2 closing evaluated at end of Day 5 before fees. Resolution: 
 ## Phase 3 — available balance as-of day for auth
 
 Authorization checks available = ledger(as_of) − active holds. Resolution: as_of = max(booking_day, value_date) of the authorization event. Auth-A on Day 2 sees ledger 250.00.
+
+## Phase 4 — settle for less than hold
+
+Auth-A hold is AED 200.00, settlement E5 captures AED 185.00. Resolution: debit the capture amount, mark auth SETTLED, release the full hold (remainder 15.00 does not stay held and is not separately posted).

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from ledger.engine import Ledger, format_report
-from ledger.stream import phase3_stream
+from ledger.stream import phase4_stream
 
 
 def run(stream=None, through_day: int = 6) -> str:
-    events = list(stream) if stream is not None else phase3_stream()
+    events = list(stream) if stream is not None else phase4_stream()
     ledger = Ledger()
     for ev in events:
         ledger.apply(ev)
