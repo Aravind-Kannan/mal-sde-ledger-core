@@ -120,15 +120,38 @@ def format_money(m: Money) -> str:
     return f"{m.currency} {sign}{whole}.{frac:0{exp}d}"
 
 
-def round_interest_minor(balance_minor: int, rate_bps: int, currency: str) -> int:
-    """0.04% per day = 4 / 10_000 of balance. ROUND_HALF_UP to currency scale."""
+def round_interest_minor(balance_minor: int, rate_numerator: int = 4) -> int:
+    """0.04% per day = 4/10_000 of balance. ROUND_HALF_UP to integer minor units."""
     if balance_minor <= 0:
         return 0
-    # rate_bps here means basis points of a percent? Spec: 0.04% = 4/10000.
-    # We pass numerator 4 and denominator 10000.
-    raw = (Decimal(balance_minor) * Decimal(rate_bps)) / Decimal(10_000)
-    quantized = raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    return int(quantized)
+    raw = (Decimal(balance_minor) * Decimal(rate_numerator)) / Decimal(10_000)
+    return int(raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def interest_plan(daily_closes: list[int], rate_numerator: int = 4) -> tuple[list[int], int]:
+    """Rounded daily accruals + capitalized total that sum exactly.
+
+    Capital = ROUND_HALF_UP(sum of exact daily raws). Last positive-balance day
+    absorbs the penny difference so sum(rounded) == capital. Remainder never
+    discarded.
+    """
+    raws: list[Decimal] = []
+    rounded: list[int] = []
+    for close in daily_closes:
+        if close > 0:
+            raw = (Decimal(close) * Decimal(rate_numerator)) / Decimal(10_000)
+        else:
+            raw = Decimal(0)
+        raws.append(raw)
+        rounded.append(int(raw.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+    capital = int(sum(raws, Decimal(0)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    diff = capital - sum(rounded)
+    if diff != 0:
+        for i in range(len(daily_closes) - 1, -1, -1):
+            if daily_closes[i] > 0:
+                rounded[i] += diff
+                break
+    return rounded, capital
 
 
 def split_equal_with_remainder(total_minor: int, parts: int) -> list[int]:

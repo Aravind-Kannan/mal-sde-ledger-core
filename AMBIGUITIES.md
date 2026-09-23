@@ -27,3 +27,15 @@ After E7, Auth-B is declined (available negative). E9 restores the ledger. Resol
 ## Phase 7 — overdraft fees derived, not sourced
 
 Fees are recomputed after every apply from source postings. Pre-fee close for day D = source postings with value_date ≤ D plus fees with value_date < D. Fee horizon = max booking_day in the log (so Day 6 is not assessed until a Day-6 booking exists). Abandoned: sticky fee rows; calendar-only fees without restatement (see REJECTED.md).
+
+## Phase 8 — interest order and capitalization
+
+Daily interest uses post-fee closing before the Day-6 capital credit (no same-day compound). Capital = ROUND_HALF_UP(sum of exact daily raws); last positive day absorbs penny drift so sum(rounded) == capital.
+
+## Phase 8 — E10 stream order vs value_date
+
+E10 is listed after E9 but has booking_day/value_date Day 5. Resolution: apply in stream order; balances use value_date. ACC-002 interest on Days 5–6 sees the BHD 10.000 credit.
+
+## Phase 8 — instalment split
+
+E10 is three equal instalments of BHD 10.000. Resolution: largest-remainder on integer minor units → 3333, 3333, 3334 fils. Not 3×3334.

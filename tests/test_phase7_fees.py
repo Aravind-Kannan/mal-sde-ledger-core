@@ -20,7 +20,7 @@ def test_after_e9_derived_fees_cleared():
     for ev in phase6_stream():
         ledger.apply(ev)
     assert ledger.fee_postings == []
-    assert ledger.ledger_balance("ACC-001", 6).minor == 46500
+    assert ledger._closing_before_interest("ACC-001", 6).minor == 46500
 
 
 def test_pre_e7_snapshot_has_no_fees():

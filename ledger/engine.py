@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from ledger.events import AppliedEvent, AuthStatus, EventType, SourceEvent
-from ledger.money import Money, format_money
+from ledger.money import Money, format_money, interest_plan, split_equal_with_remainder
 
 
 WINDOW_DAYS = (1, 2, 3, 4, 5, 6)
@@ -26,6 +26,8 @@ ACCOUNTS: dict[str, str] = {
 OVERDRAFT_FEE_MINOR: dict[str, int] = {
     "AED": 2500,
 }
+
+INTEREST_RATE_NUMERATOR = 4  # 0.04% = 4/10_000 per day
 
 
 @dataclass
@@ -64,6 +66,10 @@ class Ledger:
     # Derived: recomputed after every apply; never source-log mutations.
     # (account_id, value_date, signed_minor) — signed_minor is negative (fee debit).
     fee_postings: list[tuple[str, int, int]] = field(default_factory=list)
+    # Derived interest capital credits: (account_id, value_date, signed_minor).
+    interest_postings: list[tuple[str, int, int]] = field(default_factory=list)
+    # account_id -> 6 daily accrual minors (may be zero).
+    interest_accruals: dict[str, list[int]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.accounts:
@@ -84,6 +90,7 @@ class Ledger:
                 f"event type not yet supported: {event.event_type}"
             )
         self._restate_fees()
+        self._restate_interest()
         return applied
 
     def _apply_posting(self, event: SourceEvent) -> AppliedEvent:
@@ -113,11 +120,18 @@ class Ledger:
         if event.event_type == EventType.DEBIT:
             signed = -signed
         kind = event.event_type.value
-        self.postings.append(
-            (event.account_id, event.value_date, signed, event.event_id, kind)
-        )
+        parts = event.instalments or 1
+        if parts == 1:
+            minors = [signed]
+        else:
+            chunks = split_equal_with_remainder(abs(signed), parts)
+            minors = [c if signed >= 0 else -c for c in chunks]
+        for m in minors:
+            self.postings.append(
+                (event.account_id, event.value_date, m, event.event_id, kind)
+            )
         applied = AppliedEvent(
-            source=event, accepted=True, posting_minors=(signed,)
+            source=event, accepted=True, posting_minors=tuple(minors)
         )
         self.log.append(applied)
         return applied
@@ -351,8 +365,31 @@ class Ledger:
                 if pre < 0:
                     self.fee_postings.append((aid, day, -fee_amt))
 
+    def _closing_before_interest(self, account_id: str, as_of_day: int) -> Money:
+        """Source + fees only (excludes Day-6 interest capitalization)."""
+        ccy = self.accounts[account_id].currency
+        total = self.source_balance(account_id, as_of_day).minor
+        for aid, vdate, minor in self.fee_postings:
+            if aid == account_id and vdate <= as_of_day:
+                total += minor
+        return Money(ccy, total)
+
+    def _restate_interest(self) -> None:
+        """Daily accruals + Day-6 capital credit; rounded days sum to capital."""
+        self.interest_postings.clear()
+        self.interest_accruals.clear()
+        horizon = self._fee_horizon()
+        for aid in self.accounts:
+            closes = [
+                self._closing_before_interest(aid, day).minor for day in WINDOW_DAYS
+            ]
+            rounded, capital = interest_plan(closes, INTEREST_RATE_NUMERATOR)
+            self.interest_accruals[aid] = rounded
+            if horizon >= 6 and capital > 0:
+                self.interest_postings.append((aid, 6, capital))
+
     def source_balance(self, account_id: str, as_of_day: int) -> Money:
-        """Sum of source postings only (no derived fees)."""
+        """Sum of source postings only (no derived fees/interest)."""
         ccy = self.accounts[account_id].currency
         total = 0
         for aid, vdate, minor, _eid, _kind in self.postings:
@@ -375,10 +412,10 @@ class Ledger:
         return Money(ccy, ledger.minor - self.active_holds_minor(account_id))
 
     def ledger_balance(self, account_id: str, as_of_day: int) -> Money:
-        """Post-fee closing: source + all fees with value_date <= as_of_day."""
+        """Post-fee, post-interest-capital closing."""
         ccy = self.accounts[account_id].currency
-        total = self.source_balance(account_id, as_of_day).minor
-        for aid, vdate, minor in self.fee_postings:
+        total = self._closing_before_interest(account_id, as_of_day).minor
+        for aid, vdate, minor in self.interest_postings:
             if aid == account_id and vdate <= as_of_day:
                 total += minor
         return Money(ccy, total)

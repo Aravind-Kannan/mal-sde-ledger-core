@@ -18,8 +18,8 @@ def test_auth_b_rejected_while_e7_live_and_stays_after_e9():
         full.apply(ev)
     assert full.auths["Auth-B"].status == AuthStatus.REJECTED
     assert full.active_holds_minor("ACC-001") == 0
-    # Customer ledger back to pre-E7.
-    assert full.ledger_balance("ACC-001", 6).minor == 46500
+    # Customer ledger back to pre-E7 (before Day-6 interest capital).
+    assert full._closing_before_interest("ACC-001", 6).minor == 46500
 
 
 def test_auth_b_outcome_is_sticky_in_log():

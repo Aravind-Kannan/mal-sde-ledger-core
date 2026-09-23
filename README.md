@@ -1,6 +1,8 @@
-# Phase 1 — MVP: ISO 4217 money + CREDIT/DEBIT
+# Phase 1–8 — in-memory append-only account ledger
 
-Python 3.13+ (repo pins `.python-version`). Amounts are ISO 4217 alpha codes with integer minor units — never float.
+Python 3.13+ (repo pins `.python-version`). Amounts are ISO 4217 alpha codes with integer minor units — never float. AED exponent 2, BHD exponent 3.
+
+No web layer, no persistence, no UI, no database.
 
 ## Setup
 
@@ -11,23 +13,36 @@ python -m pip install -r requirements.txt --target .deps
 ## Run
 
 ```bash
-PYTHONPATH=".deps:." python -m pytest -q
+PYTHONPATH=".deps:." python -m pytest -q --ignore=tests/test_known_gap.py
 PYTHONPATH=".deps:." python -m ledger.replay
+```
+
+Full suite including the intentional failure:
+
+```bash
+PYTHONPATH=".deps:." python -m pytest -q
 ```
 
 ## Read the output
 
 Each day block shows:
 
-- closing ledger balance per account
-- fee assessments (none until overdraft fees land)
-- authorization states (none until holds land)
-- errors (none until settlements/rejects land)
+- **closing** — post-fee ledger balance (Day 6 also includes interest capitalization)
+- **fees** — overdraft fee assessments booked that day (AED 25.00 when pre-fee close < 0)
+- **auths** — sticky authorization outcomes visible from their booking day
+- **errors** — rejected events (e.g. Auth-Z settlement, Auth-B denial)
 
-Phase 1 stream is E1–E2 only. Day 1 ACC-001 closing is AED 250.00.
+After the day blocks, a summary lists daily interest accruals and the Day-6 capital credit per account. Rounded daily accruals sum exactly to that capital.
 
-Phase 2 adds E7 (debit booked Day 5, value_date Day 2). Day 2 closing becomes AED −370.00. See AMBIGUITIES.md.
+Default stream is E1–E10 (full).
 
 ## Known failing test
 
-`tests/test_known_gap.py` is expected to fail. It asks whether Auth-B would be approved if decisions were restated after E9; our design keeps sticky denials. Run `PYTHONPATH=".deps:." python -m pytest -q` — suite otherwise green; that one fail is intentional. Use `-rs` to see the skip/fail notes.
+`tests/test_known_gap.py` is expected to fail. It asks whether Auth-B would be approved if decisions were restated after E9; our design keeps sticky denials. See AMBIGUITIES.md and REJECTED.md.
+
+## Docs
+
+- `NUMBERS.md` — every constant and why not half of it
+- `AMBIGUITIES.md` — ambiguities found and how resolved
+- `REJECTED.md` — refused acceptance criteria and abandoned approaches
+- `WORKLOG.md` — timestamped build notes

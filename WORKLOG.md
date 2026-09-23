@@ -35,3 +35,7 @@ Phase 6: Auth-B sticky reject. Intentional failing test_known_gap.py documents r
 ## 2026-09-23 09:42 +0530
 
 Phase 7: derived OD fees. After E7/E8 fees on days 2,4,5; after E9 cleared. REJECTED.md + NUMBERS.md started.
+
+## 2026-09-23 09:45 +0530
+
+Phase 8: interest capitalization with penny-adjust; E10 → 3.333/3.333/3.334; full E1–E10 replay. Finished REJECTED criteria 2–3. Docs finalized.
