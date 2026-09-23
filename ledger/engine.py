@@ -1,12 +1,18 @@
-"""Append-only ledger engine. Phase 1: CREDIT/DEBIT only."""
+"""Append-only ledger engine.
+
+Phases:
+  1 CREDIT/DEBIT
+  2 value_date as-of
+  3 AUTHORIZATION holds
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ledger.events import AppliedEvent, EventType, SourceEvent
-from ledger.money import Money, format_money, zero
+from ledger.events import AppliedEvent, AuthStatus, EventType, SourceEvent
+from ledger.money import Money, format_money
 
 
 WINDOW_DAYS = (1, 2, 3, 4, 5, 6)
@@ -26,10 +32,19 @@ class AccountState:
 @dataclass
 class DayReport:
     day: int
-    closings: dict[str, Money]  # account_id -> post-fee closing (Phase 1: no fees)
-    fees: dict[str, list[Money]]  # account_id -> fees assessed that day
+    closings: dict[str, Money]
+    fees: dict[str, list[Money]]
     auths: list[str]
     errors: list[str]
+
+
+@dataclass
+class AuthRecord:
+    auth_id: str
+    account_id: str
+    hold_minor: int
+    status: AuthStatus
+    booking_day: int
 
 
 @dataclass
@@ -38,9 +53,9 @@ class Ledger:
 
     accounts: dict[str, AccountState] = field(default_factory=dict)
     log: list[AppliedEvent] = field(default_factory=list)
-    # Posting lines derived from accepted CREDIT/DEBIT/REVERSAL/SETTLEMENT.
     # (account_id, value_date, signed_minor, source_event_id, kind)
     postings: list[tuple[str, int, int, str, str]] = field(default_factory=list)
+    auths: dict[str, AuthRecord] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.accounts:
@@ -50,6 +65,8 @@ class Ledger:
     def apply(self, event: SourceEvent) -> AppliedEvent:
         if event.event_type in (EventType.CREDIT, EventType.DEBIT):
             return self._apply_posting(event)
+        if event.event_type == EventType.AUTHORIZATION:
+            return self._apply_authorization(event)
         raise NotImplementedError(f"event type not yet supported: {event.event_type}")
 
     def _apply_posting(self, event: SourceEvent) -> AppliedEvent:
@@ -88,8 +105,100 @@ class Ledger:
         self.log.append(applied)
         return applied
 
+    def _apply_authorization(self, event: SourceEvent) -> AppliedEvent:
+        if event.amount is None or event.auth_id is None:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error="authorization missing amount or auth_id",
+                auth_status=AuthStatus.REJECTED,
+            )
+            self.log.append(applied)
+            return applied
+        acct = self.accounts.get(event.account_id)
+        if acct is None:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error="unknown account",
+                auth_status=AuthStatus.REJECTED,
+            )
+            self.log.append(applied)
+            return applied
+        if event.amount.currency != acct.currency:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"currency mismatch: account {acct.currency}",
+                auth_status=AuthStatus.REJECTED,
+            )
+            self.log.append(applied)
+            return applied
+        if event.auth_id in self.auths:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=f"duplicate auth_id {event.auth_id}",
+                auth_status=AuthStatus.REJECTED,
+            )
+            self.log.append(applied)
+            return applied
+
+        # Available = ledger (as of booking/value day) − active holds.
+        # Use booking_day / value_date for ledger as-of (holds are live now).
+        as_of = max(event.booking_day, event.value_date)
+        ledger = self.ledger_balance(event.account_id, as_of)
+        available_minor = ledger.minor - self.active_holds_minor(event.account_id)
+        hold = event.amount.minor
+        if available_minor - hold < 0:
+            applied = AppliedEvent(
+                source=event,
+                accepted=False,
+                error=(
+                    f"insufficient available balance for {event.auth_id}: "
+                    f"available={available_minor} hold={hold}"
+                ),
+                auth_status=AuthStatus.REJECTED,
+            )
+            self.auths[event.auth_id] = AuthRecord(
+                auth_id=event.auth_id,
+                account_id=event.account_id,
+                hold_minor=hold,
+                status=AuthStatus.REJECTED,
+                booking_day=event.booking_day,
+            )
+            self.log.append(applied)
+            return applied
+
+        self.auths[event.auth_id] = AuthRecord(
+            auth_id=event.auth_id,
+            account_id=event.account_id,
+            hold_minor=hold,
+            status=AuthStatus.APPROVED,
+            booking_day=event.booking_day,
+        )
+        applied = AppliedEvent(
+            source=event,
+            accepted=True,
+            auth_status=AuthStatus.APPROVED,
+        )
+        self.log.append(applied)
+        return applied
+
+    def active_holds_minor(self, account_id: str) -> int:
+        total = 0
+        for rec in self.auths.values():
+            if rec.account_id == account_id and rec.status == AuthStatus.APPROVED:
+                total += rec.hold_minor
+        return total
+
+    def available_balance(self, account_id: str, as_of_day: int) -> Money:
+        ccy = self.accounts[account_id].currency
+        ledger = self.ledger_balance(account_id, as_of_day)
+        return Money(ccy, ledger.minor - self.active_holds_minor(account_id))
+
     def ledger_balance(self, account_id: str, as_of_day: int) -> Money:
-        """Sum of postings with value_date <= as_of_day (customer + fees later)."""
+        """Sum of postings with value_date <= as_of_day."""
         ccy = self.accounts[account_id].currency
         total = 0
         for aid, vdate, minor, _eid, _kind in self.postings:
@@ -103,16 +212,19 @@ class Ledger:
             closings = {
                 aid: self.ledger_balance(aid, day) for aid in self.accounts
             }
+            auth_lines: list[str] = []
+            for auth_id, rec in self.auths.items():
+                if rec.booking_day <= day:
+                    auth_lines.append(f"{auth_id} {rec.status.value}")
             reports.append(
                 DayReport(
                     day=day,
                     closings=closings,
                     fees={aid: [] for aid in self.accounts},
-                    auths=[],
+                    auths=auth_lines,
                     errors=[],
                 )
             )
-        # Collect sticky errors from the log (booking day tagged).
         for applied in self.log:
             if applied.error:
                 day = applied.source.booking_day
