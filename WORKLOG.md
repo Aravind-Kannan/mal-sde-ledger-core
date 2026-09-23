@@ -11,3 +11,7 @@ Scaffolded ledger/money.py, events.py, engine.py, stream.py, replay.py, tests/te
 ## 2026-09-23 09:35 +0530
 
 Phase 1 green: 4 passed. Replay prints ACC-001 Day 1 closing AED 250.00. Global pyenv default was 2.7; pinned `.python-version` to 3.13.1 and installed pytest into `.deps` (gitignored). Author email gate: aravindkannan2001@gmail.com. Committing Phase 1.
+
+## 2026-09-23 09:36 +0530
+
+Phase 2: value_date as-of closes. Stream E1,E2,E7. Day 2 pre-fee close AED −370.00. Documented booking vs value_date in AMBIGUITIES.md.

@@ -25,3 +25,5 @@ Each day block shows:
 - errors (none until settlements/rejects land)
 
 Phase 1 stream is E1–E2 only. Day 1 ACC-001 closing is AED 250.00.
+
+Phase 2 adds E7 (debit booked Day 5, value_date Day 2). Day 2 closing becomes AED −370.00. See AMBIGUITIES.md.

@@ -117,7 +117,7 @@ def format_money(m: Money) -> str:
     abs_minor = abs(m.minor)
     whole = abs_minor // (10**exp)
     frac = abs_minor % (10**exp)
-    return f"{sign}{m.currency} {whole}.{frac:0{exp}d}"
+    return f"{m.currency} {sign}{whole}.{frac:0{exp}d}"
 
 
 def round_interest_minor(balance_minor: int, rate_bps: int, currency: str) -> int:
